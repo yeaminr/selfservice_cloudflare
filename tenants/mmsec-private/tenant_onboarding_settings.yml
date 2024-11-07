@@ -1,0 +1,19 @@
+---
+application_name: commsec-private
+TSO: CI023401000
+dev_fqdns:
+  www2.dev.commsec.com.au
+  www3.dev.commsec.com.au
+  www4.dev.commsec.com.au  
+tst_fqdns:
+  www2.tst.commsec.com.au
+  www3.tst.commsec.com.au
+  www4.tst.commsec.com.au  
+stg_fqdns:
+  www2.stg.commsec.com.au
+  www3.stg.commsec.com.au
+  www4.stg.commsec.com.au  
+prd_fqdns:
+  www2.commsec.com.au
+  www3.commsec.com.au
+  www4.commsec.com.au
