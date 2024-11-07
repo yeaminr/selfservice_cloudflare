@@ -1,0 +1,124 @@
+name: Tenant Onboarding
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      application_name:
+        description: 'Name of the tenant application team to run the setup'
+        required: true
+        type: string
+        default: 'edgesecurity_team'
+  
+permissions:
+  contents: write # This is required to push changes
+  actions: read # This is for snyk to be able to read the actions
+  statuses: read # This is required for the security tab
+  id-token: write # This is required for requesting the JWT
+  security-events: write # This is required to post to the security tab
+  
+jobs:
+  onboard-tenant:
+    runs-on: [default]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set tenant onboarding file
+        id: files
+        run: |
+          application_name=${{ github.event.inputs.application_name }}
+          if [[ ! -f "tenants/${application_name}/tenant_onboarding_settings.yml" ]]; then
+            echo "Tenant onboarding file does not exist"
+            exit 1
+          fi
+      - name: 'Read and extract tenant onboarding settings'
+        id: read-tenant-onboarding-settings
+        run: |
+          echo "Read and extract tenant onboarding settings..."
+          tenant_directory="tenants/${{ gihub.event.inputs.application_name }}"
+          cat $tenant_directory
+          if [ ! -d "$tenant_directory" ]; then 
+            echo "Tenant directory doesn't exist !!!"
+            exit 1
+          fi
+          tenant_onboarding_file="tenants/${{ github.event.inputs.application_name }}/tenant_onboarding_settings.yml"
+          cat $tenant_onboarding_file
+          application_name_in_file=$(cat $tenant_onboarding_file | grep "application_name" | awk '{print $2}')  
+          if [[ $application_name_in_file != ${{ github.event.inputs.application_name }} ]]; then
+            echo "Application name in file does not match with the input application name !!!"
+            exit 1
+          fi
+      - name: Create CFZone Tenant Repo Mapping YAML
+        id: create-cfzone-tenant-repo-mapping_yaml
+        run: |
+          #!/bin/bash
+          set -e
+          tenant_onboarding_file="tenants/${{ github.event.inputs.application_name }}/tenant_onboarding_settings.yml"
+          echo "tenant_onboarding_file: $tenant_onboarding_file"
+          app_name=$(yq eval '.application_name' $tenant_onboarding_file)
+          dev_fqdns=$(yq eval '.dev_fqdns' $tenant_onboarding_file)
+          tst_fqdns=$(yq eval '.tst_fqdns' $tenant_onboarding_file)
+          stg_fqdns=$(yq eval '.stg_fqdns' $tenant_onboarding_file)
+          prd_fqdns=$(yq eval '.prd_fqdns' $tenant_onboarding_file)
+          cat >> cfzone_tenant_repo_mapping.yaml << EOF
+          groupsec-edgesecurity-tenant-$app_name:
+              $dev_fqdns
+              $tst_fqdns
+              $stg_fqdns
+              $prd_fqdns
+          EOF
+          echo "printing file content..."
+          echo "---------------------------------"
+          cat cfzone_tenant_repo_mapping.yaml
+          git config user.name "Edge Security Operations"
+          git config user.email "edgesecops@cba.com.au"
+          git add cfzone_tenant_repo_mapping.yaml
+          git commit -m "Create CFZone Tenant Repo Mapping YAML"
+          git push
+      - name: copy tenant yaml file
+        run: |
+          cp tenants/${{ github.event.inputs.application_name }}/tenant_onboarding_settings.yml terraform/tenant_setup/tenant_onboarding_settings.yml
+          echo "copied tenant yaml file"
+
+      - name: Fetch Creds from Vault
+        uses: hashicorp/vault-action@v3
+        with:
+            method: jwt
+            path: jwt_github-repository
+            url: ${{ vars.VAULT_URL }}
+            role: default
+            secrets: |
+              ${{ vars.VAULT_NAMESPACE }}/${{ vars.VAULT_GHEC_PATH }}  gh_automation_app_id | GITHUB_APP_ID;
+              ${{ vars.VAULT_NAMESPACE }}/${{ vars.VAULT_GHEC_PATH }}  gh_automation_app_installation_id | GITHUB_APP_INSTALLATION_ID;
+              ${{ vars.VAULT_NAMESPACE }}/${{ vars.VAULT_GHEC_PATH }}  gh_automation_app_key | GITHUB_APP_PEM_FILE;
+
+      - name: 'Terraform plan for tenant repo onboarding'
+        working-directory: ./terraform/tenant_setup
+        run: |
+          echo "Terraform plan for tenant repo onboarding..."
+          echo "current  directory:"
+          pwd
+          ls -la
+          echo $HOME
+          ls -ltra $HOME
+          terraform init
+          terraform plan
+        env:
+          GITHUB_APP_ID: ${{ env.GITHUB_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ env.GITHUB_APP_INSTALLATION_ID }}
+          GITHUB_APP_PEM_FILE: ${{ env.GITHUB_APP_PEM_FILE }}
+      - name: 'Terraform apply for tenant repo onboarding'
+        if: github.ref == 'refs/heads/main'
+        working-directory: ./terraform/tenant_setup
+        run: |
+          echo "Terraform apply for tenant repo onboarding..."
+          echo "current  directory:"
+          pwd
+          ls -ltra
+          echo $HOME
+          terraform apply -auto-approve
+        env:
+          GITHUB_APP_ID: ${{ env.GITHUB_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ env.GITHUB_APP_INSTALLATION_ID }}
+          GITHUB_APP_PEM_FILE: ${{ env.GITHUB_APP_PEM_FILE }}
