@@ -36,7 +36,7 @@ jobs:
         id: read-tenant-onboarding-settings
         run: |
           echo "Read and extract tenant onboarding settings..."
-          tenant_directory="tenants/${{ gihub.event.inputs.application_name }}"
+          tenant_directory="tenants/${{ github.event.inputs.application_name }}"
           cat $tenant_directory
           if [ ! -d "$tenant_directory" ]; then 
             echo "Tenant directory doesn't exist !!!"
